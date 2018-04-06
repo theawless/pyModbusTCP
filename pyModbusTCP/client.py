@@ -3,7 +3,7 @@
 # Python module: ModbusClient class (Client ModBus/TCP)
 
 from . import constants as const
-from .utils import crc16, set_bit
+from .utils import crc16, set_bit, check_security_frame, generate_security_frame, get_security_frame_size
 import re
 import socket
 import select
@@ -816,11 +816,13 @@ class ModbusClient:
         # for auto_open mode, check TCP and open if need
         if self.__auto_open and not self.is_open():
             self.open()
+        # append signed digest
+        digest = generate_security_frame(frame)
         # send request
-        bytes_send = self._send(frame)
+        bytes_send = self._send(frame + digest)
         if bytes_send:
             if self.__debug:
-                self._pretty_dump('Tx', frame)
+                self._pretty_dump('Tx', frame + digest)
             return bytes_send
         else:
             return None
@@ -919,6 +921,9 @@ class ModbusClient:
             self.__debug_msg('except (code ' + str(exp_code) + ')')
             return None
         else:
+            # check signed digest
+            rx_digest = self._recv(get_security_frame_size())
+            assert check_security_frame(rx_frame, rx_digest)
             # return
             return f_body
 

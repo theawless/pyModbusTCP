@@ -3,7 +3,7 @@
 # Python module: ModbusServer class (ModBus/TCP Server)
 
 from . import constants as const
-from .utils import test_bit, set_bit
+from .utils import test_bit, set_bit, generate_security_frame, check_security_frame, get_security_frame_size
 import socket
 import struct
 from threading import Lock, Thread
@@ -78,6 +78,10 @@ class ModbusServer(object):
                     break
                 # receive body
                 rx_body = self.request.recv(rx_hd_length - 1)
+                # check signed digest
+                rx_frame = rx_head + rx_body
+                rx_digest = self.request.recv(get_security_frame_size())
+                assert check_security_frame(rx_frame, rx_digest)
                 # close connection if lack of bytes in frame body
                 if not (rx_body and (len(rx_body) == rx_hd_length - 1)):
                     break
@@ -192,8 +196,11 @@ class ModbusServer(object):
                     tx_body = struct.pack('BB', rx_bd_fc + 0x80, exp_status)
                 # build frame header
                 tx_head = struct.pack('>HHHB', rx_hd_tr_id, rx_hd_pr_id, len(tx_body) + 1, rx_hd_unit_id)
+                # append signed digest
+                tx_frame = tx_head + tx_body
+                tx_digest = generate_security_frame(tx_frame)
                 # send frame
-                self.request.send(tx_head + tx_body)
+                self.request.send(tx_frame + tx_digest)
             self.request.close()
 
     def __init__(self, host='localhost', port=502, no_block=False, ipv6=False):
