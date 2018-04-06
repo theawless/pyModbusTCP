@@ -1,8 +1,32 @@
 # -*- coding: utf-8 -*-
 
 # Python module: Some functions for modbus data mangling
-
+import hashlib
 import struct
+import time
+
+from Crypto.PublicKey import RSA
+
+rsa_key = RSA.generate(256 * 8)
+
+
+def get_security_frame_size():
+    return 256 + 4
+
+
+def generate_security_frame(frame):
+    digest = hashlib.sha256(frame).digest()
+    signature = (rsa_key.sign(digest, None)[0]).to_bytes(256, byteorder='big')
+    timestamp = int(time.time()).to_bytes(4, byteorder='big')
+    return signature + timestamp
+
+
+def check_security_frame(frame, security_frame):
+    signed_digest, timestamp = security_frame[-256 - 4:-4], security_frame[-4:]
+    digest = hashlib.sha256(frame).digest()
+    signature_check = rsa_key.publickey().verify(digest, (int.from_bytes(signed_digest, byteorder='big'), None))
+    timestamp_check = int.from_bytes(timestamp, byteorder='big') - int(time.time()) < 3
+    return signature_check and timestamp_check
 
 
 ###############
