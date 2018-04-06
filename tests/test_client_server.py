@@ -51,52 +51,88 @@ class TestModbusClient(unittest.TestCase):
         self.assertEqual(c.unit_id(420), None)
 
 
+def repeat(func):
+    def new_func(*args, **kwargs):
+        for _ in range(100):
+            func(*args, **kwargs)
+
+    return new_func
+
+
 # TODO improve this basic test
 class TestClientServer(unittest.TestCase):
+    port = 5020
 
     def setUp(self):
         # modbus server
-        self.server = ModbusServer(port=5020, no_block=True)
+        self.server = ModbusServer(port=TestClientServer.port, no_block=True)
         self.server.start()
         # modbus client
-        self.client = ModbusClient(port=5020)
+        self.client = ModbusClient(port=TestClientServer.port)
         self.client.open()
+        # to prevent address taken errors
+        TestClientServer.port += 1
 
     def tearDown(self):
         self.client.close()
 
-    def test_read_and_write(self):
+    @repeat
+    def test_word_init(self):
         # word space
         self.assertEqual(self.client.read_holding_registers(0), [0], 'Default value is 0 when server start')
         self.assertEqual(self.client.read_input_registers(0), [0], 'Default value is 0 when server start')
+
+    @repeat
+    def test_word_single(self):
         # single read/write
         self.assertEqual(self.client.write_single_register(0, 0xffff), True)
         self.assertEqual(self.client.read_input_registers(0), [0xffff])
+
+    @repeat
+    def test_word_multi(self):
         # multi-write at max size
         words_l = [randint(0, 0xffff)] * 0x7b
         self.assertEqual(self.client.write_multiple_registers(0, words_l), True)
         self.assertEqual(self.client.read_holding_registers(0, len(words_l)), words_l)
         self.assertEqual(self.client.read_input_registers(0, len(words_l)), words_l)
+
+    @repeat
+    def test_word_oversize(self):
         # write over sized
         words_l = [randint(0, 0xffff)] * 0x7c
         self.assertEqual(self.client.write_multiple_registers(0, words_l), None)
+
+    @repeat
+    def test_bit_init(self):
         # bit space
         self.assertEqual(self.client.read_coils(0), [False], 'Default value is False when server start')
         self.assertEqual(self.client.read_discrete_inputs(0), [False], 'Default value is False when server start')
+
+    @repeat
+    def test_bit_single(self):
         # single read/write
         self.assertEqual(self.client.write_single_coil(0, True), True)
         self.assertEqual(self.client.read_coils(0), [True])
         self.assertEqual(self.client.read_discrete_inputs(0), [True])
+
+    @repeat
+    def test_bit_multi_min(self):
         # multi-write at min size
         bits_l = [getrandbits(1)] * 0x1
         self.assertEqual(self.client.write_multiple_coils(0, bits_l), True)
         self.assertEqual(self.client.read_coils(0, len(bits_l)), bits_l)
         self.assertEqual(self.client.read_discrete_inputs(0, len(bits_l)), bits_l)
+
+    @repeat
+    def test_bit_multi_max(self):
         # multi-write at max size
         bits_l = [getrandbits(1)] * 0x7b0
         self.assertEqual(self.client.write_multiple_coils(0, bits_l), True)
         self.assertEqual(self.client.read_coils(0, len(bits_l)), bits_l)
         self.assertEqual(self.client.read_discrete_inputs(0, len(bits_l)), bits_l)
+
+    @repeat
+    def test_bit_multi_oversize(self):
         # multi-write over sized
         bits_l = [getrandbits(1)] * 0x7b1
         self.assertEqual(self.client.write_multiple_coils(0, bits_l), None)
